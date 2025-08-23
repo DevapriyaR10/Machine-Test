@@ -36,4 +36,18 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+// Delete agent by ID
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const agent = await Agent.findById(req.params.id);
+    if (!agent) return res.status(404).json({ message: "Agent not found" });
+
+    await agent.remove();
+    res.json({ message: "Agent deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 export default router;
+
