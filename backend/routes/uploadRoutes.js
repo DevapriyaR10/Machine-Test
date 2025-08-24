@@ -7,7 +7,8 @@ import authMiddleware from "../middleware/authMiddleware.js";
 const router = express.Router();
 const UPLOAD_DIR = "uploads";
 
-router.post("/upload", authMiddleware, upload.single("file"), (req, res) => {
+// ✅ Upload File
+router.post("/", authMiddleware, upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
   res.status(201).json({
@@ -22,6 +23,7 @@ router.post("/upload", authMiddleware, upload.single("file"), (req, res) => {
   });
 });
 
+// ✅ Get All Uploaded Files
 router.get("/", authMiddleware, (req, res) => {
   fs.readdir(UPLOAD_DIR, (err, files) => {
     if (err) return res.status(500).json({ message: err.message });
@@ -41,4 +43,18 @@ router.get("/", authMiddleware, (req, res) => {
   });
 });
 
+// ✅ Delete a File
+router.delete("/:fileName", authMiddleware, (req, res) => {
+  const filePath = path.join(UPLOAD_DIR, req.params.fileName);
+
+  fs.unlink(filePath, (err) => {
+    if (err) {
+      console.error("Delete error:", err);
+      return res.status(500).json({ message: "Failed to delete file", error: err.message });
+    }
+    res.json({ message: "File deleted successfully" });
+  });
+});
+
 export default router;
+
