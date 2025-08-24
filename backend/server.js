@@ -16,7 +16,8 @@ app.use(cors());
 app.use("/api/auth", authRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/api/lists", listRoutes);
-app.use("/api/upload", uploadRoutes);
+app.use("/api/uploads", uploadRoutes);
+
 
 
 mongoose.connect(process.env.MONGO_URI)
