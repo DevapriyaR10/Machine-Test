@@ -9,6 +9,9 @@ import ListItem from "../models/listItem.js";
 
 const router = express.Router();
 
+/**
+ * ✅ Upload file & distribute leads across agents
+ */
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
     const agents = await Agent.find();
@@ -27,7 +30,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
             phone: row.Phone,
             notes: row.Notes,
           }));
-          await distributeAndSave(items, agents, req.file.originalname);
+          await distributeAndSave(items, agents);
           res.json({ message: "File uploaded & distributed successfully" });
         });
     } else if (req.file.mimetype.includes("sheet")) {
@@ -39,7 +42,7 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
         phone: row.Phone || row.phone,
         notes: row.Notes || row.notes,
       }));
-      await distributeAndSave(items, agents, req.file.originalname);
+      await distributeAndSave(items, agents);
       res.json({ message: "File uploaded & distributed successfully" });
     } else if (req.file.mimetype === "application/json") {
       const data = JSON.parse(fs.readFileSync(req.file.path));
@@ -48,8 +51,10 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
         phone: row.Phone || row.phone,
         notes: row.Notes || row.notes,
       }));
-      await distributeAndSave(items, agents, req.file.originalname);
+      await distributeAndSave(items, agents);
       res.json({ message: "File uploaded & distributed successfully" });
+    } else {
+      return res.status(400).json({ message: "Unsupported file format" });
     }
   } catch (err) {
     console.error(err);
@@ -57,16 +62,44 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
   }
 });
 
+/**
+ * ✅ Get all uploaded leads/tasks
+ */
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const lists = await ListItem.find().populate("agent", "name email").sort({ createdAt: -1 });
+    const lists = await ListItem.find()
+      .populate("agent", "name email")
+      .sort({ createdAt: -1 });
     res.json(lists);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-async function distributeAndSave(items, agents, fileName) {
+/**
+ * ✅ Update status/priority for a task
+ */
+router.patch("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { status, priority } = req.body;
+    const updatedItem = await ListItem.findByIdAndUpdate(
+      req.params.id,
+      { status, priority },
+      { new: true }
+    ).populate("agent", "name email");
+
+    if (!updatedItem) return res.status(404).json({ message: "Task not found" });
+
+    res.json(updatedItem);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * Helper function — distributes leads to agents round-robin
+ */
+async function distributeAndSave(items, agents) {
   let agentIndex = 0;
   const savedItems = [];
 
