@@ -97,6 +97,20 @@ router.patch("/:id", authMiddleware, async (req, res) => {
 });
 
 /**
+ * ✅ Delete a task
+ */
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const deletedItem = await ListItem.findByIdAndDelete(req.params.id);
+    if (!deletedItem) return res.status(404).json({ message: "Task not found" });
+
+    res.json({ message: "Task deleted successfully", deletedItem });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
  * Helper function — distributes leads to agents round-robin
  */
 async function distributeAndSave(items, agents) {
