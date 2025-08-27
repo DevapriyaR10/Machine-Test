@@ -10,6 +10,29 @@ import ListItem from "../models/listItem.js";
 const router = express.Router();
 
 /**
+ * 🔧 Helper to normalize enum values
+ */
+function normalizeEnum(value, type) {
+  if (!value) return;
+
+  const normalized = value.toString().trim().toLowerCase();
+
+  if (type === "status") {
+    if (["pending", "in progress", "completed"].includes(normalized)) {
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+    return "Pending"; // fallback
+  }
+
+  if (type === "priority") {
+    if (["low", "normal", "high"].includes(normalized)) {
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+    return "Normal"; // fallback
+  }
+}
+
+/**
  * ✅ Upload file & distribute leads across agents
  */
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
@@ -20,21 +43,21 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
     let items = [];
 
     if (req.file.mimetype === "text/csv" || req.file.mimetype === "application/vnd.ms-excel") {
-      // Wrap CSV parsing in a promise to properly await
-      items = await new Promise((resolve, reject) => {
-        const rows = [];
-        fs.createReadStream(req.file.path)
-          .pipe(csv())
-          .on("data", (row) => rows.push(row))
-          .on("end", () => resolve(rows))
-          .on("error", reject);
-      });
-
-      items = items.map((row) => ({
-        firstName: row.FirstName,
-        phone: row.Phone,
-        notes: row.Notes,
-      }));
+      const rows = [];
+      fs.createReadStream(req.file.path)
+        .pipe(csv())
+        .on("data", (row) => rows.push(row))
+        .on("end", async () => {
+          items = rows.map((row) => ({
+            firstName: row.FirstName,
+            phone: row.Phone,
+            notes: row.Notes,
+            status: row.Status,
+            priority: row.Priority,
+          }));
+          await distributeAndSave(items, agents);
+          res.json({ message: "File uploaded & distributed successfully" });
+        });
     } else if (req.file.mimetype.includes("sheet")) {
       const workbook = xlsx.readFile(req.file.path);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -43,24 +66,27 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
         firstName: row.FirstName || row.name,
         phone: row.Phone || row.phone,
         notes: row.Notes || row.notes,
+        status: row.Status || row.status,
+        priority: row.Priority || row.priority,
       }));
+      await distributeAndSave(items, agents);
+      res.json({ message: "File uploaded & distributed successfully" });
     } else if (req.file.mimetype === "application/json") {
       const data = JSON.parse(fs.readFileSync(req.file.path));
       items = data.map((row) => ({
         firstName: row.FirstName || row.name,
         phone: row.Phone || row.phone,
         notes: row.Notes || row.notes,
+        status: row.Status || row.status,
+        priority: row.Priority || row.priority,
       }));
+      await distributeAndSave(items, agents);
+      res.json({ message: "File uploaded & distributed successfully" });
     } else {
       return res.status(400).json({ message: "Unsupported file format" });
     }
-
-    // ✅ Save & distribute with status/priority defaults
-    await distributeAndSave(items, agents);
-
-    res.json({ message: "File uploaded & distributed successfully" });
   } catch (err) {
-    console.error("Upload error:", err);
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -87,7 +113,10 @@ router.patch("/:id", authMiddleware, async (req, res) => {
     const { status, priority } = req.body;
     const updatedItem = await ListItem.findByIdAndUpdate(
       req.params.id,
-      { ...(status && { status }), ...(priority && { priority }) },
+      {
+        status: normalizeEnum(status, "status"),
+        priority: normalizeEnum(priority, "priority"),
+      },
       { new: true }
     ).populate("agent", "name email");
 
@@ -125,8 +154,8 @@ async function distributeAndSave(items, agents) {
     const newItem = new ListItem({
       ...items[i],
       agent: assignedAgent._id,
-      status: "pending",     // ✅ set default
-      priority: "normal",    // ✅ set default
+      status: normalizeEnum(items[i].status, "status") || "Pending",
+      priority: normalizeEnum(items[i].priority, "priority") || "Normal",
     });
     savedItems.push(newItem.save());
     agentIndex = (agentIndex + 1) % agents.length;
