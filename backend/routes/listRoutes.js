@@ -1,5 +1,6 @@
 import express from "express";
 import fs from "fs";
+import path from "path";
 import csv from "csv-parser";
 import xlsx from "xlsx";
 import upload from "../middleware/upload.js";
@@ -8,27 +9,29 @@ import Agent from "../models/agent.js";
 import ListItem from "../models/listItem.js";
 
 const router = express.Router();
+const UPLOAD_DIR = "uploads";
 
-// Upload & distribute
+// 🔹 Upload + Distribute in one go
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
     const agents = await Agent.find();
-    if (!agents.length) {
-      return res.status(400).json({ message: "No agents available" });
-    }
+    if (!agents.length) return res.status(400).json({ message: "No agents available" });
 
     let items = [];
 
+    // ✅ CSV
     if (req.file.mimetype === "text/csv" || req.file.mimetype === "application/vnd.ms-excel") {
-      // ✅ parse CSV fully before distributing
       const rows = await parseCSV(req.file.path);
       items = rows.map((row) => ({
         firstName: row.FirstName || row.Name,
         phone: row.Phone,
         notes: row.Notes || "",
       }));
-    } else if (req.file.mimetype.includes("sheet")) {
-      // Excel
+    }
+    // ✅ Excel
+    else if (req.file.mimetype.includes("sheet")) {
       const workbook = xlsx.readFile(req.file.path);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = xlsx.utils.sheet_to_json(sheet);
@@ -37,8 +40,9 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
         phone: row.Phone || row.phone,
         notes: row.Notes || row.notes || "",
       }));
-    } else if (req.file.mimetype === "application/json") {
-      // JSON
+    }
+    // ✅ JSON
+    else if (req.file.mimetype === "application/json") {
       const data = JSON.parse(fs.readFileSync(req.file.path));
       items = data.map((row) => ({
         firstName: row.FirstName || row.name,
@@ -49,12 +53,19 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
-    // ✅ Distribute & save to DB
-    await distributeAndSave(items, agents, req.file.originalname);
+    // ✅ Distribute & save
+    await distributeAndSave(items, agents);
 
-    return res.json({
+    res.status(201).json({
       message: "File uploaded & distributed successfully",
-      count: items.length,
+      file: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        size: req.file.size,
+        path: req.file.path,
+        uploadedAt: new Date(),
+      },
+      distributedCount: items.length,
     });
   } catch (err) {
     console.error("Upload error:", err);
@@ -62,19 +73,29 @@ router.post("/upload", authMiddleware, upload.single("file"), async (req, res) =
   }
 });
 
-// Get all list items
-router.get("/", authMiddleware, async (req, res) => {
+// 🔹 Get all distributed tasks
+router.get("/tasks", authMiddleware, async (req, res) => {
   try {
-    const lists = await ListItem.find()
+    const tasks = await ListItem.find()
       .populate("agent", "name email")
       .sort({ createdAt: -1 });
-    res.json(lists);
+    res.json(tasks);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Helper: parse CSV into JSON
+// 🔹 Delete a task (optional if you need cleanup)
+router.delete("/tasks/:id", authMiddleware, async (req, res) => {
+  try {
+    await ListItem.findByIdAndDelete(req.params.id);
+    res.json({ message: "Task deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// --- Helpers ---
 function parseCSV(filePath) {
   return new Promise((resolve, reject) => {
     const rows = [];
@@ -86,8 +107,7 @@ function parseCSV(filePath) {
   });
 }
 
-// Helper: distribute across agents
-async function distributeAndSave(items, agents, fileName) {
+async function distributeAndSave(items, agents) {
   let agentIndex = 0;
   const savedItems = [];
 
