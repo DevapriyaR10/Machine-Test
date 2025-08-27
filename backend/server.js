@@ -5,7 +5,6 @@ import cors from "cors";
 import authRoutes from "./routes/auth.js";
 import agentRoutes from "./routes/agentRoutes.js";
 import listRoutes from "./routes/listRoutes.js";
-import uploadRoutes from "./routes/uploadRoutes.js";
 
 dotenv.config();
 
@@ -16,7 +15,6 @@ app.use(cors());
 app.use("/api/auth", authRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/api/lists", listRoutes);
-app.use("/api/uploads", uploadRoutes);
 
 
 
