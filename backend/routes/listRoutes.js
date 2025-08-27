@@ -85,7 +85,26 @@ router.get("/tasks", authMiddleware, async (req, res) => {
   }
 });
 
-// 🔹 Delete a task (optional if you need cleanup)
+// 🔹 Update a task (edit details like notes, priority, status, agent, etc.)
+router.put("/tasks/:id", authMiddleware, async (req, res) => {
+  try {
+    const { firstName, phone, notes, priority, status, agent } = req.body;
+
+    const updatedTask = await ListItem.findByIdAndUpdate(
+      req.params.id,
+      { firstName, phone, notes, priority, status, agent },
+      { new: true, runValidators: true }
+    ).populate("agent", "name email");
+
+    if (!updatedTask) return res.status(404).json({ message: "Task not found" });
+
+    res.json({ message: "Task updated successfully", task: updatedTask });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 🔹 Delete a task
 router.delete("/tasks/:id", authMiddleware, async (req, res) => {
   try {
     await ListItem.findByIdAndDelete(req.params.id);
