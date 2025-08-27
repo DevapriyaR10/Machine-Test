@@ -15,7 +15,7 @@ const listItemSchema = new mongoose.Schema(
     },
     priority: {
       type: String,
-      enum: ["Low", "Medium", "High"],
+      enum: ["Low", "Medium", "High", "Normal"],
       default: "Medium",
     },
   },
